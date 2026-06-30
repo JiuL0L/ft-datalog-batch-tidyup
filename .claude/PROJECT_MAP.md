@@ -52,7 +52,7 @@ Critical schema quirks:
 5. `pickFingerprintCols` — choose ≤30 RT0 measurement columns that are numeric across all rows and have non-zero spread.
 6. `matchRetestToRT0Fails` — greedy 1-to-1 assignment minimizing scale-normalized L2 distance over fingerprint columns (RT0 fail rows ↔ retest rows).
 7. `buildChipTimeline` — for each RT0 row, attach matched retest entries; apply **any-pass-wins** to pick the final state.
-8. `aggregate` — overall yield, by first-test Site yield, bin breakdown (first-test vs final).
+8. `aggregate` — overall yield, by first-test Site yield, bin breakdown (first-test vs final), `cumulativeByRT[]` (any-pass-wins earliest-RT pass curve).
 9. `writeMergedCsv` + `writeHtml` — outputs. `writeHtml` reads `scripts/vendor/echarts.min.js` synchronously and inlines it as a single `<script>` block before `</body>` so reports stay offline-capable.
 
 ## Key calls / call sites

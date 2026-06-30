@@ -247,6 +247,35 @@ function buildChipTimeline(rt0, retests, fpCols) {
 }
 
 // ---------- Aggregates ----------
+// Cumulative pass yield per RT stage (any-pass-wins, earliest RT counted).
+// Returns [{rt: 'RT0'|..., yield: 0..1, deltaPp: null|number}, ...].
+function computeCumulativeByRT(chipList, retests) {
+  const total = chipList.length;
+  const stages = [0, ...retests.map(r => r.rt)];
+  const passAtStage = new Array(stages.length).fill(0);
+  for (const c of chipList) {
+    let earliest = -1;
+    if (c.rt0PF === 'P') {
+      earliest = 0;
+    } else {
+      for (let i = 0; i < retests.length; i++) {
+        const rr = c.retests[retests[i].rt];
+        if (rr && rr.pf === 'P') { earliest = i + 1; break; }
+      }
+    }
+    if (earliest >= 0) passAtStage[earliest] += 1;
+  }
+  const out = [];
+  let running = 0;
+  for (let i = 0; i < stages.length; i++) {
+    running += passAtStage[i];
+    const y = total ? running / total : 0;
+    const deltaPp = i === 0 ? null : (y - out[i - 1].yield) * 100;
+    out.push({ rt: `RT${stages[i]}`, yield: y, deltaPp });
+  }
+  return out;
+}
+
 function aggregate(chipList, retests) {
   const total = chipList.length;
   const ftPass = chipList.filter(c => c.rt0PF === 'P').length;
@@ -287,6 +316,7 @@ function aggregate(chipList, retests) {
     sites,
     binsFirstTest: tally('rt0'),
     binsFinal: tally('final'),
+    cumulativeByRT: computeCumulativeByRT(chipList, retests),
   };
 }
 
@@ -854,6 +884,34 @@ function writeHtml(filePath, ctx) {
   .yield-kpi.rescue .yield-kpi-num { color: var(--accent-2); }
   .yield-kpi.rescue.zero .yield-kpi-num { color: var(--mute); }
 
+  .yield-cumline-wrap {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .yield-cumline-eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 8px;
+  }
+  .yield-cumline {
+    width: 100%;
+    height: 168px;
+  }
+  .yield-cumline-empty {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--mute-2);
+    height: 168px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   /* ---------- Sites ---------- */
   .site-row {
     display: grid;
@@ -1394,6 +1452,12 @@ function writeHtml(filePath, ctx) {
               <div class="yield-kpi-num">${rescueText}<span class="pct">pp</span></div>
             </div>
           </div>
+          <div class="yield-cumline-wrap">
+            <div class="yield-cumline-eyebrow">RT cumulative yield</div>
+            ${agg.cumulativeByRT.length > 1
+              ? `<div class="yield-cumline" id="ovw-yield-cumline"></div>`
+              : `<div class="yield-cumline-empty">RT0 only — no retest stages.</div>`}
+          </div>
         </div>
       </div>
     </section>
@@ -1513,6 +1577,108 @@ function writeHtml(filePath, ctx) {
 
   </main>
 <script>${echartsSrc}</script>
+<script>
+(function () {
+  if (typeof echarts === 'undefined') return;
+  var palette = {
+    accent: '#059669',
+    accent2: '#047857',
+    mute: '#52525b',
+    mute2: '#a1a1aa',
+    line: 'rgba(15, 23, 42, 0.06)',
+    surface: '#ffffff'
+  };
+
+  var cumData = ${JSON.stringify(agg.cumulativeByRT)};
+  var cumEl = document.getElementById('ovw-yield-cumline');
+  if (cumEl && cumData.length > 1) {
+    var chart = echarts.init(cumEl, null, { renderer: 'canvas' });
+    var yVals = cumData.map(function (d) { return Number((d.yield * 100).toFixed(2)); });
+    var minY = Math.min.apply(null, yVals);
+    var maxY = Math.max.apply(null, yVals);
+    var span = Math.max(maxY - minY, 0.5);
+    var pad = Math.max(span * 0.4, 0.5);
+    var yMin = Math.max(0, Math.floor((minY - pad) * 10) / 10);
+    var yMax = Math.min(100, Math.ceil((maxY + pad) * 10) / 10);
+
+    chart.setOption({
+      animationDuration: 600,
+      grid: { top: 28, right: 18, bottom: 24, left: 8, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          var p = params[0];
+          var d = cumData[p.dataIndex];
+          var lines = [p.axisValue + ' · ' + p.data.toFixed(2) + '%'];
+          if (d.deltaPp !== null) {
+            var sign = d.deltaPp >= 0 ? '+' : '';
+            lines.push('Δ ' + sign + d.deltaPp.toFixed(2) + 'pp');
+          }
+          return lines.join('<br>');
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: cumData.map(function (d) { return d.rt; }),
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11, margin: 10 }
+      },
+      yAxis: {
+        type: 'value',
+        min: yMin,
+        max: yMax,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: palette.line } },
+        axisLabel: {
+          color: palette.mute2,
+          fontFamily: 'Geist Mono, monospace',
+          fontSize: 11,
+          formatter: function (v) { return v + '%'; }
+        }
+      },
+      series: [{
+        type: 'line',
+        data: yVals,
+        symbol: 'circle',
+        symbolSize: 9,
+        smooth: false,
+        clip: false,
+        lineStyle: { color: palette.accent, width: 2 },
+        itemStyle: { color: palette.accent, borderColor: palette.surface, borderWidth: 2 },
+        emphasis: { scale: 1.2 },
+        label: {
+          show: true,
+          position: 'top',
+          distance: 10,
+          fontFamily: 'Geist Mono, monospace',
+          fontSize: 11,
+          fontWeight: 500,
+          formatter: function (params) {
+            if (params.dataIndex === 0) return '';
+            var d = cumData[params.dataIndex];
+            if (d.deltaPp === null) return '';
+            if (Math.abs(d.deltaPp) < 0.005) return '{m|+0.00pp}';
+            return '{a|+' + d.deltaPp.toFixed(2) + 'pp}';
+          },
+          rich: {
+            a: { color: palette.accent2, fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 500 },
+            m: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 500 }
+          }
+        }
+      }]
+    });
+
+    window.addEventListener('resize', function () { chart.resize(); });
+  }
+}());
+</script>
 </body>
 </html>
 `;
