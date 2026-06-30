@@ -313,6 +313,17 @@ function aggregate(chipList, retests) {
     return [...m.values()].sort((a, b) => a.bin - b.bin);
   };
 
+  // Top-3 FT-scope fail bins: group RT0 fails by bin, share is of total chips.
+  const ftFails = chipList.filter(c => c.rt0PF === 'F');
+  const ftFailByBin = new Map();
+  for (const c of ftFails) {
+    ftFailByBin.set(c.rt0Bin, (ftFailByBin.get(c.rt0Bin) || 0) + 1);
+  }
+  const top3FtFailBins = [...ftFailByBin.entries()]
+    .map(([bin, count]) => ({ bin, count, pctOfTotal: total ? count / total : 0 }))
+    .sort((a, b) => b.count - a.count || a.bin - b.bin)
+    .slice(0, 3);
+
   return {
     total, ftPass, ftFail: total - ftPass,
     finalPass, finalFail: total - finalPass,
@@ -323,6 +334,7 @@ function aggregate(chipList, retests) {
     binsFirstTest: tally('rt0'),
     binsFinal: tally('final'),
     cumulativeByRT: computeCumulativeByRT(chipList, retests),
+    overviewBinLoss: { ft: top3FtFailBins },
   };
 }
 
@@ -449,6 +461,25 @@ function writeHtml(filePath, ctx) {
           <div class="bin-stat">
             <div class="bin-pct">${pctNum.toFixed(2)}%</div>
             <div class="bin-count">n=${b.count}</div>
+          </div>
+        </div>`;
+    }).join('');
+  };
+
+  // ----- Top fail bins (Bin Loss region) -----
+  const lossRows = (entries) => {
+    if (!entries.length) {
+      return `<div class="loss-empty">No fail bins · 100% yield</div>`;
+    }
+    return entries.map(e => {
+      const pctNum = e.pctOfTotal * 100;
+      return `
+        <div class="bin-row loss-row">
+          <div class="bin-name">BIN${String(e.bin).padStart(4, '0')}</div>
+          <div class="bin-bar"><div class="bin-bar-fill f" style="--w:${pctNum.toFixed(2)}%"></div></div>
+          <div class="bin-stat">
+            <div class="bin-pct">${pctNum.toFixed(2)}%</div>
+            <div class="bin-count">n=${e.count}</div>
           </div>
         </div>`;
     }).join('');
@@ -1213,6 +1244,22 @@ function writeHtml(filePath, ctx) {
     letter-spacing: 0.04em;
   }
 
+  /* ---------- Top fail bins (Bin Loss region) ---------- */
+  .overview-binloss .loss-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .bin-row.loss-row {
+    grid-template-columns: 96px minmax(0, 1fr) 80px;
+  }
+  .loss-empty {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--mute-2);
+    padding: 14px 0;
+    letter-spacing: 0.04em;
+  }
+
   /* ---------- Pills / tags ---------- */
   .pill {
     display: inline-flex; align-items: center; gap: 4px;
@@ -1545,6 +1592,14 @@ function writeHtml(filePath, ctx) {
             ${agg.cumulativeByRT.length > 1
               ? `<div class="yield-cumline" id="ovw-yield-cumline"></div>`
               : `<div class="yield-cumline-empty">RT0 only — no retest stages.</div>`}
+          </div>
+        </div>
+        <div class="overview-region overview-binloss">
+          <div class="overview-region-head">
+            <div class="overview-region-eyebrow">Top fail bins</div>
+          </div>
+          <div class="loss-list">
+            ${lossRows(agg.overviewBinLoss.ft)}
           </div>
         </div>
       </div>
