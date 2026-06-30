@@ -66,17 +66,23 @@ function parseIfm(content) {
   return result;
 }
 
-// Build {swBin -> 'P'|'F'} from the HW:SW_BIN_MAPPING_LIST section.
-function buildBinPFMap(ifm) {
-  const m = {};
+// Build {pf: {swBin -> 'P'|'F'}, swToHw: {swBin -> hwBin}} from the
+// HW:SW_BIN_MAPPING_LIST section. Lines look like `<HW>=<SW>:<PF>;<SW>:<PF>;`.
+function buildBinMaps(ifm) {
+  const pf = {};
+  const swToHw = {};
   const list = ifm['HW:SW_BIN_MAPPING_LIST'] || {};
-  for (const mapping of Object.values(list)) {
+  for (const [hwKey, mapping] of Object.entries(list)) {
+    const hw = Number(hwKey);
     for (const entry of mapping.split(';')) {
-      const [sw, pf] = entry.split(':');
-      if (sw && pf) m[Number(sw)] = pf.trim().toUpperCase();
+      const [sw, p] = entry.split(':');
+      if (!sw || !p) continue;
+      const swNum = Number(sw);
+      pf[swNum] = p.trim().toUpperCase();
+      if (Number.isFinite(hw)) swToHw[swNum] = hw;
     }
   }
-  return m;
+  return { pf, swToHw };
 }
 
 // ---------- CSV parser (FT datalog wide format) ----------
@@ -320,6 +326,45 @@ function aggregate(chipList, retests) {
   };
 }
 
+// Pareto data for the Overview Bin Pareto region. For each scope ∈ {ft,final}
+// and bin kind ∈ {sw,hw} return the fail-bin tally sorted desc by count with
+// a running cumulative percentage. HW bin comes from the .ifm
+// HW:SW_BIN_MAPPING_LIST (SW bin → HW bin).
+function aggregateOverviewBins(chipList, swToHw) {
+  const scopes = {
+    ft:    { bin: c => c.rt0Bin,    pf: c => c.rt0PF    },
+    final: { bin: c => c.final.bin, pf: c => c.final.pf },
+  };
+  const tally = (fails, keyOf) => {
+    const m = new Map();
+    for (const c of fails) {
+      const k = keyOf(c);
+      if (k === null || k === undefined || Number.isNaN(k)) continue;
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    const arr = [...m.entries()]
+      .map(([bin, count]) => ({ bin, count }))
+      .sort((a, b) => b.count - a.count || a.bin - b.bin);
+    const total = arr.reduce((s, x) => s + x.count, 0);
+    let running = 0;
+    for (const e of arr) {
+      running += e.count;
+      e.cumPct = total ? (100 * running / total) : 0;
+    }
+    return arr;
+  };
+  const out = { sw: {}, hw: {} };
+  for (const [scopeName, sel] of Object.entries(scopes)) {
+    const fails = chipList.filter(c => sel.pf(c) === 'F');
+    out.sw[scopeName] = tally(fails, c => sel.bin(c));
+    out.hw[scopeName] = tally(fails, c => {
+      const hw = swToHw[sel.bin(c)];
+      return Number.isFinite(hw) ? hw : null;
+    });
+  }
+  return out;
+}
+
 // ---------- Outputs ----------
 function writeMergedCsv(filePath, chipList, retests) {
   const cols = ['rt0_serial', 'rt0_site', 'rt0_bin', 'rt0_pf'];
@@ -348,7 +393,7 @@ function esc(s) {
 const pct = (n, d) => (d ? (100 * n / d).toFixed(2) + '%' : '0.00%');
 
 function writeHtml(filePath, ctx) {
-  const { input, rt0, retests, chipList, agg } = ctx;
+  const { input, rt0, retests, chipList, agg, overviewBinPareto } = ctx;
   const lotMeta = rt0.ifm.TesterInfo || {};
   const yieldDelta = (agg.trueYield - agg.ftYield) * 100;
   const rescueRoundsToZero = yieldDelta < 0.005;
@@ -1578,6 +1623,7 @@ function writeHtml(filePath, ctx) {
   </main>
 <script>${echartsSrc}</script>
 <script>
+const OVERVIEW_BIN_PARETO = ${JSON.stringify(overviewBinPareto)};
 (function () {
   if (typeof echarts === 'undefined') return;
   var palette = {
@@ -1701,11 +1747,11 @@ function main() {
     const rts = rtFiles.map(f => {
       const csv = parseCsv(fs.readFileSync(f.csv, 'utf8'));
       const ifm = fs.existsSync(f.ifm) ? parseIfm(fs.readFileSync(f.ifm, 'utf8')) : {};
-      const binPF = buildBinPFMap(ifm);
+      const { pf: binPF, swToHw } = buildBinMaps(ifm);
       for (const row of csv.rows) {
         row.pf = (binPF[row.bin] === 'P') ? 'P' : 'F';
       }
-      return { rt: f.rt, csv, ifm, binPF };
+      return { rt: f.rt, csv, ifm, binPF, swToHw };
     });
 
     const rt0 = rts.find(r => r.rt === 0);
@@ -1715,10 +1761,11 @@ function main() {
     const fpCols = pickFingerprintCols(rt0.csv.rows, 30);
     const chipList = buildChipTimeline(rt0, retests, fpCols);
     const agg = aggregate(chipList, retests);
+    const overviewBinPareto = aggregateOverviewBins(chipList, rt0.swToHw);
 
     const htmlPath = path.join(outDir, 'report.html');
     const csvPath = path.join(outDir, 'merged.csv');
-    writeHtml(htmlPath, { input: path.basename(input), rt0, retests, chipList, agg });
+    writeHtml(htmlPath, { input: path.basename(input), rt0, retests, chipList, agg, overviewBinPareto });
     writeMergedCsv(csvPath, chipList, retests);
 
     console.log(`Out dir : ${outDir}`);
