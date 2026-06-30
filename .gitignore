@@ -1,0 +1,20 @@
+# Generated reports (one dir per input batch, regenerated on every script run)
+report-*/
+
+# Script extraction target (auto-populated from input zips)
+unpacked/
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
+
+# Local agent working data (per CLAUDE.md — private by default)
+.Codex/
+
+# Internal scratch dir used during git initialization
+.gittmp/

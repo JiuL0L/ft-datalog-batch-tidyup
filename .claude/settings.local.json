@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls ~/.claude/CLAUDE.md 2>/dev/null && echo \"EXISTS\" || echo \"NOT_FOUND\")",
+      "Read(//c/Users/xiaojie/.claude/**)"
+    ]
+  }
+}
