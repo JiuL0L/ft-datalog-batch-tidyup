@@ -321,6 +321,9 @@ function writeHtml(filePath, ctx) {
   const { input, rt0, retests, chipList, agg } = ctx;
   const lotMeta = rt0.ifm.TesterInfo || {};
   const yieldDelta = (agg.trueYield - agg.ftYield) * 100;
+  const rescueRoundsToZero = yieldDelta < 0.005;
+  const rescueText = rescueRoundsToZero ? '0.00' : `+${yieldDelta.toFixed(2)}`;
+  const rescueCls = rescueRoundsToZero ? 'rescue zero' : 'rescue';
   const rtCount = retests.length;
   const device = (lotMeta.LotID || '').split('-')[0] || '';
   const generated = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
@@ -781,6 +784,75 @@ function writeHtml(filePath, ctx) {
     border-radius: var(--radius);
     box-shadow: var(--shadow-1);
   }
+
+  /* ---------- Overview ---------- */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .overview-region {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-1);
+    padding: 26px 28px;
+  }
+  .overview-region-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+  .overview-region-eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .yield-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    align-items: end;
+  }
+  .yield-kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .yield-kpi-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .yield-kpi-num {
+    font-family: var(--font);
+    font-weight: 600;
+    font-size: clamp(34px, 4.2vw, 48px);
+    letter-spacing: -0.035em;
+    line-height: 0.95;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .yield-kpi-num .pct {
+    font-family: var(--mono);
+    font-size: 0.36em;
+    margin-left: 4px;
+    color: var(--mute);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .yield-kpi.rescue .yield-kpi-num { color: var(--accent-2); }
+  .yield-kpi.rescue.zero .yield-kpi-num { color: var(--mute); }
 
   /* ---------- Sites ---------- */
   .site-row {
@@ -1303,7 +1375,27 @@ function writeHtml(filePath, ctx) {
         </div>
         <div class="section-sub">Yield · Bin Loss · Bin Pareto · Yield by Site.</div>
       </div>
-      <div class="overview-grid"></div>
+      <div class="overview-grid">
+        <div class="overview-region overview-yield">
+          <div class="overview-region-head">
+            <div class="overview-region-eyebrow">Yield</div>
+          </div>
+          <div class="yield-kpis">
+            <div class="yield-kpi">
+              <div class="yield-kpi-label">FT</div>
+              <div class="yield-kpi-num">${(agg.ftYield*100).toFixed(2)}<span class="pct">%</span></div>
+            </div>
+            <div class="yield-kpi">
+              <div class="yield-kpi-label">True</div>
+              <div class="yield-kpi-num">${(agg.trueYield*100).toFixed(2)}<span class="pct">%</span></div>
+            </div>
+            <div class="yield-kpi ${rescueCls}">
+              <div class="yield-kpi-label">Rescue</div>
+              <div class="yield-kpi-num">${rescueText}<span class="pct">pp</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="section">
