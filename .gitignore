@@ -16,5 +16,8 @@ Thumbs.db
 # Local agent working data (per CLAUDE.md — private by default)
 .Codex/
 
+# Per-user Claude Code permissions / settings
+.claude/settings.local.json
+
 # Internal scratch dir used during git initialization
 .gittmp/
