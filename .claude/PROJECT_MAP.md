@@ -15,7 +15,8 @@ FT_DATALOG_due/
 ├── scripts/
 │   ├── process_ft_datalog.js      Main reusable script (Node, stdlib only)
 │   ├── vendor/
-│   │   └── echarts.min.js         Vendored Apache ECharts 5.5.1 (inlined into reports)
+│   │   ├── echarts.min.js         Vendored Apache ECharts 5.5.1 (inlined into reports)
+│   │   └── README.md              Provenance: version, source URL, SHA-256, consumer note
 │   └── README.md                  Usage and data-format notes
 ├── .scratch/
 │   └── <feature>/                 Spec / issue files for in-flight work
