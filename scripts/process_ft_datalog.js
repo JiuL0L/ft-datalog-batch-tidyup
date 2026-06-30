@@ -324,6 +324,7 @@ function writeHtml(filePath, ctx) {
   const rtCount = retests.length;
   const device = (lotMeta.LotID || '').split('-')[0] || '';
   const generated = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+  const echartsSrc = fs.readFileSync(path.join(__dirname, 'vendor', 'echarts.min.js'), 'utf8');
 
   // ----- Per-site rows (refined: bar pair + delta arrow) -----
   const siteRows = agg.sites.map(s => {
@@ -1298,6 +1299,17 @@ function writeHtml(filePath, ctx) {
       <div class="section-head">
         <div class="section-title-wrap">
           <span class="section-index">01 ·</span>
+          <h2 class="section-title">Overview</h2>
+        </div>
+        <div class="section-sub">Yield · Bin Loss · Bin Pareto · Yield by Site.</div>
+      </div>
+      <div class="overview-grid"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div class="section-title-wrap">
+          <span class="section-index">02 ·</span>
           <h2 class="section-title">By first-test Site</h2>
         </div>
         <div class="section-sub">True-yield attribution: each chip stays under its first-test socket even if rescued elsewhere.</div>
@@ -1310,7 +1322,7 @@ function writeHtml(filePath, ctx) {
     <section class="section">
       <div class="section-head">
         <div class="section-title-wrap">
-          <span class="section-index">02 ·</span>
+          <span class="section-index">03 ·</span>
           <h2 class="section-title">RT stage timeline</h2>
         </div>
         <div class="section-sub">First test + ${rtCount} retest pass(es). RunStatus reported by the tester.</div>
@@ -1323,7 +1335,7 @@ function writeHtml(filePath, ctx) {
     <section class="section">
       <div class="section-head">
         <div class="section-title-wrap">
-          <span class="section-index">03 ·</span>
+          <span class="section-index">04 ·</span>
           <h2 class="section-title">Bin breakdown</h2>
         </div>
         <div class="section-sub">First-test bins vs. final bins after any-pass-wins resolution.</div>
@@ -1349,7 +1361,7 @@ function writeHtml(filePath, ctx) {
     <section class="section">
       <div class="section-head">
         <div class="section-title-wrap">
-          <span class="section-index">04 ·</span>
+          <span class="section-index">05 ·</span>
           <h2 class="section-title">Per-chip detail</h2>
         </div>
         <div class="section-sub">${chipList.length} chips · retest rows fingerprint-matched to RT0 fail rows. <code>fp-dist</code> ≈ 0 means a confident match.</div>
@@ -1391,7 +1403,7 @@ function writeHtml(filePath, ctx) {
 
     <section class="notes">
       <div class="notes-head">
-        <div class="notes-title">05 · Method</div>
+        <div class="notes-title">06 · Method</div>
         <div class="notes-sub">How the numbers are computed</div>
       </div>
       <ul>
@@ -1408,6 +1420,7 @@ function writeHtml(filePath, ctx) {
     </footer>
 
   </main>
+<script>${echartsSrc}</script>
 </body>
 </html>
 `;
