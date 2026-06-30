@@ -394,6 +394,7 @@ const pct = (n, d) => (d ? (100 * n / d).toFixed(2) + '%' : '0.00%');
 
 function writeHtml(filePath, ctx) {
   const { input, rt0, retests, chipList, agg, overviewBinPareto } = ctx;
+  const swParetoFt = (overviewBinPareto && overviewBinPareto.sw && overviewBinPareto.sw.ft) || [];
   const lotMeta = rt0.ifm.TesterInfo || {};
   const yieldDelta = (agg.trueYield - agg.ftYield) * 100;
   const rescueRoundsToZero = yieldDelta < 0.005;
@@ -957,6 +958,46 @@ function writeHtml(filePath, ctx) {
     justify-content: center;
   }
 
+  /* ---------- Bin Pareto (Overview) ---------- */
+  .overview-binpareto { margin-top: 20px; }
+  .binpareto-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 24px;
+    align-items: stretch;
+  }
+  .binpareto-panel {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .binpareto-subtitle {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 12px;
+  }
+  .binpareto-chart {
+    width: 100%;
+    height: 280px;
+  }
+  .binpareto-empty {
+    width: 100%;
+    height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--mute-2);
+    text-align: center;
+    padding: 0 12px;
+    line-height: 1.55;
+  }
+
   /* ---------- Sites ---------- */
   .site-row {
     display: grid;
@@ -1374,6 +1415,7 @@ function writeHtml(filePath, ctx) {
     .hero-right { grid-template-columns: 1fr 1fr; }
     .rt-row { grid-template-columns: 140px 1fr 1fr 1fr 60px; }
     .rt-start { display: none; }
+    .binpareto-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
   }
   @media (max-width: 760px) {
     .page { padding: 20px 16px 60px; }
@@ -1390,6 +1432,7 @@ function writeHtml(filePath, ctx) {
     .rt-start { display: block; grid-column: 1 / -1; }
     .bin-grid { grid-template-columns: 1fr; }
     .notes { grid-template-columns: 1fr; gap: 20px; padding: 22px 24px; }
+    .binpareto-row { grid-template-columns: 1fr; gap: 18px; }
   }
 </style>
 </head>
@@ -1502,6 +1545,25 @@ function writeHtml(filePath, ctx) {
             ${agg.cumulativeByRT.length > 1
               ? `<div class="yield-cumline" id="ovw-yield-cumline"></div>`
               : `<div class="yield-cumline-empty">RT0 only — no retest stages.</div>`}
+          </div>
+        </div>
+      </div>
+      <div class="overview-region overview-binpareto">
+        <div class="overview-region-head">
+          <div class="overview-region-eyebrow">Bin Pareto</div>
+        </div>
+        <div class="binpareto-row">
+          <div class="binpareto-panel">
+            <div class="binpareto-subtitle">SW Bin Pareto</div>
+            ${swParetoFt.length
+              ? `<div class="binpareto-chart" id="ovw-binpareto-sw"></div>`
+              : `<div class="binpareto-empty">No fail SW bins — perfect FT yield.</div>`}
+          </div>
+          <div class="binpareto-panel">
+            <div class="binpareto-subtitle">Bin count distribution</div>
+            ${swParetoFt.length >= 2
+              ? `<div class="binpareto-chart" id="ovw-binpareto-sw-hist"></div>`
+              : `<div class="binpareto-empty">Not enough fail bins to show distribution</div>`}
           </div>
         </div>
       </div>
@@ -1722,6 +1784,192 @@ const OVERVIEW_BIN_PARETO = ${JSON.stringify(overviewBinPareto)};
     });
 
     window.addEventListener('resize', function () { chart.resize(); });
+  }
+
+  // ---- SW Bin Pareto (issue 07) ----
+  var swPareto = (OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.sw && OVERVIEW_BIN_PARETO.sw.ft) || [];
+  var parEl = document.getElementById('ovw-binpareto-sw');
+  if (parEl && swPareto.length) {
+    var paretoChart = echarts.init(parEl, null, { renderer: 'canvas' });
+    var binLabels = swPareto.map(function (e) { return 'BIN' + String(e.bin).padStart(4, '0'); });
+    var counts = swPareto.map(function (e) { return e.count; });
+    var cumPctVals = swPareto.map(function (e) { return Number(e.cumPct.toFixed(2)); });
+    var totalFails = counts.reduce(function (s, x) { return s + x; }, 0) || 1;
+
+    paretoChart.setOption({
+      color: ['#be123c', '#18181b'],
+      animationDuration: 600,
+      grid: { top: 30, right: 56, bottom: 36, left: 40, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          var bar = null, line = null;
+          for (var i = 0; i < params.length; i++) {
+            if (params[i].seriesType === 'bar') bar = params[i];
+            else if (params[i].seriesType === 'line') line = params[i];
+          }
+          var binName = bar ? bar.axisValue : (line ? line.axisValue : '');
+          var c = bar ? bar.data : 0;
+          var p = line ? line.data : 0;
+          var pctOfTotal = (100 * c / totalFails).toFixed(2);
+          return binName + '<br>' +
+            'Count: ' + c + ' (' + pctOfTotal + '% of fails)<br>' +
+            'Cumulative: ' + p.toFixed(2) + '%';
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: binLabels,
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11,
+          rotate: binLabels.length > 6 ? 30 : 0
+        }
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: 'Count',
+          nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+          minInterval: 1,
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { lineStyle: { color: palette.line } },
+          axisLabel: { color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+        },
+        {
+          type: 'value',
+          name: 'Cum %',
+          nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+          min: 0, max: 100,
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: {
+            color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11,
+            formatter: function (v) { return v + '%'; }
+          }
+        }
+      ],
+      series: [
+        {
+          name: 'count',
+          type: 'bar',
+          yAxisIndex: 0,
+          data: counts,
+          barMaxWidth: 32,
+          itemStyle: { borderRadius: [3, 3, 0, 0] }
+        },
+        {
+          name: 'cumPct',
+          type: 'line',
+          yAxisIndex: 1,
+          data: cumPctVals,
+          symbol: 'circle',
+          symbolSize: 7,
+          lineStyle: { width: 2 },
+          markLine: {
+            symbol: 'none',
+            silent: true,
+            lineStyle: { color: palette.mute2, type: 'dashed', width: 1 },
+            label: {
+              position: 'end',
+              color: palette.mute,
+              fontFamily: 'Geist Mono, monospace',
+              fontSize: 10,
+              formatter: '80%'
+            },
+            data: [{ yAxis: 80 }]
+          }
+        }
+      ]
+    });
+    window.addEventListener('resize', function () { paretoChart.resize(); });
+  }
+
+  // ---- SW bin count histogram (issue 08) ----
+  // Bucket rule: bucketCount = min(10, ceil(sqrt(N))); integer-aligned edges
+  // so X-axis labels are clean count ranges (e.g. "1", "2–3", "4–5").
+  function histogramBuckets(values) {
+    if (!values || values.length < 2) return null;
+    var lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] < lo) lo = values[i];
+      if (values[i] > hi) hi = values[i];
+    }
+    if (hi === lo) {
+      return [{ lo: lo, hi: hi, label: String(lo), count: values.length }];
+    }
+    var bucketCount = Math.min(10, Math.ceil(Math.sqrt(values.length)));
+    var step = Math.max(1, Math.ceil((hi - lo + 1) / bucketCount));
+    var buckets = [];
+    for (var lb = lo; lb <= hi; lb += step) {
+      var ub = Math.min(hi, lb + step - 1);
+      buckets.push({ lo: lb, hi: ub, count: 0, label: lb === ub ? String(lb) : (lb + '–' + ub) });
+    }
+    for (var j = 0; j < values.length; j++) {
+      var v = values[j];
+      var idx = Math.floor((v - lo) / step);
+      if (idx >= buckets.length) idx = buckets.length - 1;
+      buckets[idx].count += 1;
+    }
+    return buckets;
+  }
+
+  var histEl = document.getElementById('ovw-binpareto-sw-hist');
+  var histBuckets = histogramBuckets(swPareto.map(function (e) { return e.count; }));
+  if (histEl && histBuckets) {
+    var histChart = echarts.init(histEl, null, { renderer: 'canvas' });
+    histChart.setOption({
+      color: [palette.mute2],
+      animationDuration: 600,
+      grid: { top: 30, right: 18, bottom: 36, left: 40, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          var p = params[0];
+          var b = histBuckets[p.dataIndex];
+          var rangeLabel = b.lo === b.hi ? ('count = ' + b.lo) : ('count ' + b.lo + '–' + b.hi);
+          return rangeLabel + '<br>' + p.data + ' SW bin' + (p.data === 1 ? '' : 's');
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: histBuckets.map(function (b) { return b.label; }),
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11,
+          rotate: histBuckets.length > 5 ? 30 : 0
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: 'SW bins',
+        nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+        minInterval: 1,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: palette.line } },
+        axisLabel: { color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+      },
+      series: [{
+        type: 'bar',
+        data: histBuckets.map(function (b) { return b.count; }),
+        barMaxWidth: 40,
+        itemStyle: { borderRadius: [3, 3, 0, 0] }
+      }]
+    });
+    window.addEventListener('resize', function () { histChart.resize(); });
   }
 }());
 </script>
