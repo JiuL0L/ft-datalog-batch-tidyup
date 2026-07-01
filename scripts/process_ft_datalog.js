@@ -299,6 +299,10 @@ function aggregate(chipList, retests) {
     if (c.final.pf === 'P') s.finalPass += 1;
   }
   const sites = [...sitesMap.values()].sort((a, b) => a.site - b.site);
+  for (const s of sites) {
+    s.ftYield = s.total ? s.ftPass / s.total : 0;
+    s.finalYield = s.total ? s.finalPass / s.total : 0;
+  }
 
   // Bin breakdown (first-test and final).
   const tally = (key) => {
@@ -1741,6 +1745,7 @@ function writeHtml(filePath, ctx) {
 <script>${echartsSrc}</script>
 <script>
 const OVERVIEW_BIN_PARETO = ${JSON.stringify(overviewBinPareto)};
+const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
 (function () {
   if (typeof echarts === 'undefined') return;
   var palette = {
