@@ -411,7 +411,13 @@ const pct = (n, d) => (d ? (100 * n / d).toFixed(2) + '%' : '0.00%');
 function writeHtml(filePath, ctx) {
   const { input, rt0, retests, chipList, agg, overviewBinPareto } = ctx;
   const swParetoFt = (overviewBinPareto && overviewBinPareto.sw && overviewBinPareto.sw.ft) || [];
+  const swParetoFinal = (overviewBinPareto && overviewBinPareto.sw && overviewBinPareto.sw.final) || [];
   const hwParetoFt = (overviewBinPareto && overviewBinPareto.hw && overviewBinPareto.hw.ft) || [];
+  const hwParetoFinal = (overviewBinPareto && overviewBinPareto.hw && overviewBinPareto.hw.final) || [];
+  // Render container if EITHER scope has enough data — the toggle can then swap
+  // between them without recreating chart instances.
+  const swParetoLenMax = Math.max(swParetoFt.length, swParetoFinal.length);
+  const hwParetoLenMax = Math.max(hwParetoFt.length, hwParetoFinal.length);
   const lotMeta = rt0.ifm.TesterInfo || {};
   const yieldDelta = (agg.trueYield - agg.ftYield) * 100;
   const rescueRoundsToZero = yieldDelta < 0.005;
@@ -890,6 +896,62 @@ function writeHtml(filePath, ctx) {
     line-height: 1.55;
   }
 
+  /* ---------- Scope toggle (Overview: FT / Final) ---------- */
+  .section-head-main {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+  .scope-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    position: relative;
+  }
+  .scope-toggle .scope-radio {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .scope-toggle .scope-label {
+    cursor: pointer;
+    padding: 5px 14px;
+    border-radius: var(--radius-pill);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+    text-transform: uppercase;
+    transition: background .18s ease, color .18s ease;
+    user-select: none;
+  }
+  .scope-toggle .scope-radio:checked + .scope-label {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+  .scope-toggle .scope-radio:focus-visible + .scope-label {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .scope-toggle .scope-label:hover {
+    color: var(--ink-2);
+  }
+  .scope-toggle .scope-radio:checked + .scope-label:hover {
+    color: var(--ink);
+  }
+
   .surface {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -1041,6 +1103,46 @@ function writeHtml(filePath, ctx) {
     margin-top: 20px;
     padding-top: 20px;
     border-top: 1px solid var(--line-soft);
+  }
+
+  /* ---------- Yield by Site (Overview) ---------- */
+  .overview-bysite { margin-top: 20px; }
+  .bysite-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    align-items: stretch;
+  }
+  .bysite-panel {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .bysite-subtitle {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 12px;
+  }
+  .bysite-chart {
+    width: 100%;
+    height: 320px;
+  }
+  .bysite-empty {
+    width: 100%;
+    height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--mute-2);
+    text-align: center;
+    padding: 0 12px;
+    line-height: 1.55;
   }
 
   /* ---------- Sites ---------- */
@@ -1576,11 +1678,19 @@ function writeHtml(filePath, ctx) {
 
     <section class="section">
       <div class="section-head">
-        <div class="section-title-wrap">
-          <span class="section-index">01 ·</span>
-          <h2 class="section-title">Overview</h2>
+        <div class="section-head-main">
+          <div class="section-title-wrap">
+            <span class="section-index">01 ·</span>
+            <h2 class="section-title">Overview</h2>
+          </div>
+          <div class="section-sub">Yield · Bin Loss · Bin Pareto · Yield by Site.</div>
         </div>
-        <div class="section-sub">Yield · Bin Loss · Bin Pareto · Yield by Site.</div>
+        <div class="scope-toggle" role="radiogroup" aria-label="Overview scope">
+          <input type="radio" name="overview-scope" id="ovw-scope-ft" value="ft" class="scope-radio">
+          <label for="ovw-scope-ft" class="scope-label">FT</label>
+          <input type="radio" name="overview-scope" id="ovw-scope-final" value="final" class="scope-radio" checked>
+          <label for="ovw-scope-final" class="scope-label">Final</label>
+        </div>
       </div>
       <div class="overview-grid">
         <div class="overview-region overview-yield">
@@ -1624,28 +1734,32 @@ function writeHtml(filePath, ctx) {
         <div class="binpareto-row">
           <div class="binpareto-panel">
             <div class="binpareto-subtitle">SW Bin Pareto</div>
-            ${swParetoFt.length
-              ? `<div class="binpareto-chart" id="ovw-binpareto-sw"></div>`
+            ${swParetoLenMax
+              ? `<div class="binpareto-chart" id="ovw-binpareto-sw"></div>
+                 <div class="binpareto-empty" id="ovw-binpareto-sw-empty" hidden>No fail SW bins in this scope.</div>`
               : `<div class="binpareto-empty">No fail SW bins — perfect FT yield.</div>`}
           </div>
           <div class="binpareto-panel">
             <div class="binpareto-subtitle">Bin count distribution</div>
-            ${swParetoFt.length >= 2
-              ? `<div class="binpareto-chart" id="ovw-binpareto-sw-hist"></div>`
+            ${swParetoLenMax >= 2
+              ? `<div class="binpareto-chart" id="ovw-binpareto-sw-hist"></div>
+                 <div class="binpareto-empty" id="ovw-binpareto-sw-hist-empty" hidden>Not enough fail bins in this scope.</div>`
               : `<div class="binpareto-empty">Not enough fail bins to show distribution</div>`}
           </div>
           <div class="binpareto-panel">
             <div class="binpareto-subtitle">Bin count box plot</div>
-            ${swParetoFt.length >= 5
-              ? `<div class="binpareto-chart" id="ovw-binpareto-sw-box"></div>`
+            ${swParetoLenMax >= 5
+              ? `<div class="binpareto-chart" id="ovw-binpareto-sw-box"></div>
+                 <div class="binpareto-empty" id="ovw-binpareto-sw-box-empty" hidden>Need ≥5 fail bins in this scope.</div>`
               : `<div class="binpareto-empty">Need ≥5 fail bins for box plot stats</div>`}
           </div>
         </div>
         <div class="binpareto-row-hw">
           <div class="binpareto-panel">
             <div class="binpareto-subtitle">HW Bin Pareto</div>
-            ${hwParetoFt.length
-              ? `<div class="binpareto-chart binpareto-chart-hw" id="ovw-binpareto-hw"></div>`
+            ${hwParetoLenMax
+              ? `<div class="binpareto-chart binpareto-chart-hw" id="ovw-binpareto-hw"></div>
+                 <div class="binpareto-empty binpareto-empty-hw" id="ovw-binpareto-hw-empty" hidden>No fail HW bins in this scope.</div>`
               : `<div class="binpareto-empty binpareto-empty-hw">No fail HW bins — perfect FT yield.</div>`}
           </div>
         </div>
@@ -1874,14 +1988,13 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
   // bars = count (--fail red), line = cumulative % (--ink-2 near-black),
   // with a dashed 80% markLine on the right axis. binLabelFn(entry) formats
   // the X-axis label (e.g. 'BIN0007' for SW, 'HW1' for HW).
-  function renderParetoChart(el, data, binLabelFn) {
-    var chart = echarts.init(el, null, { renderer: 'canvas' });
+  function paretoOption(data, binLabelFn) {
     var binLabels = data.map(binLabelFn);
     var counts = data.map(function (e) { return e.count; });
     var cumPctVals = data.map(function (e) { return Number(e.cumPct.toFixed(2)); });
     var totalFails = counts.reduce(function (s, x) { return s + x; }, 0) || 1;
 
-    chart.setOption({
+    return {
       color: ['#be123c', '#18181b'],
       animationDuration: 600,
       grid: { top: 30, right: 56, bottom: 36, left: 40, containLabel: true },
@@ -1973,27 +2086,10 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
           }
         }
       ]
-    });
-    window.addEventListener('resize', function () { chart.resize(); });
+    };
   }
 
-  // ---- SW Bin Pareto (issue 07) ----
-  var swPareto = (OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.sw && OVERVIEW_BIN_PARETO.sw.ft) || [];
-  var swParEl = document.getElementById('ovw-binpareto-sw');
-  if (swParEl && swPareto.length) {
-    renderParetoChart(swParEl, swPareto, function (e) {
-      return 'BIN' + String(e.bin).padStart(4, '0');
-    });
-  }
-
-  // ---- HW Bin Pareto (issue 10) ----
-  var hwPareto = (OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.hw && OVERVIEW_BIN_PARETO.hw.ft) || [];
-  var hwParEl = document.getElementById('ovw-binpareto-hw');
-  if (hwParEl && hwPareto.length) {
-    renderParetoChart(hwParEl, hwPareto, function (e) { return 'HW' + e.bin; });
-  }
-
-  // ---- SW bin count histogram (issue 08) ----
+  // ---- Bin count histogram (issue 08) ----
   // Bucket rule: bucketCount = min(10, ceil(sqrt(N))); integer-aligned edges
   // so X-axis labels are clean count ranges (e.g. "1", "2–3", "4–5").
   function histogramBuckets(values) {
@@ -2022,11 +2118,10 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
     return buckets;
   }
 
-  var histEl = document.getElementById('ovw-binpareto-sw-hist');
-  var histBuckets = histogramBuckets(swPareto.map(function (e) { return e.count; }));
-  if (histEl && histBuckets) {
-    var histChart = echarts.init(histEl, null, { renderer: 'canvas' });
-    histChart.setOption({
+  function histogramOption(data) {
+    var histBuckets = histogramBuckets(data.map(function (e) { return e.count; }));
+    if (!histBuckets) return null;
+    return {
       color: [palette.mute2],
       animationDuration: 600,
       grid: { top: 30, right: 18, bottom: 36, left: 40, containLabel: true },
@@ -2069,11 +2164,10 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
         barMaxWidth: 40,
         itemStyle: { borderRadius: [3, 3, 0, 0] }
       }]
-    });
-    window.addEventListener('resize', function () { histChart.resize(); });
+    };
   }
 
-  // ---- SW bin count box plot (issue 09) ----
+  // ---- Bin count box plot (issue 09) ----
   // Five-number summary + Tukey outliers (< Q1-1.5·IQR or > Q3+1.5·IQR).
   // Quartiles via linear interpolation on the sorted array.
   function boxplotStats(values) {
@@ -2106,12 +2200,11 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
     return { min: whiskerMin, q1: q1, median: median, q3: q3, max: whiskerMax, outliers: outliers };
   }
 
-  var boxEl = document.getElementById('ovw-binpareto-sw-box');
-  var boxStats = boxplotStats(swPareto.map(function (e) { return e.count; }));
-  if (boxEl && boxStats) {
-    var boxChart = echarts.init(boxEl, null, { renderer: 'canvas' });
+  function boxplotOption(data) {
+    var boxStats = boxplotStats(data.map(function (e) { return e.count; }));
+    if (!boxStats) return null;
     var BOX_WIDTH = 44;
-    boxChart.setOption({
+    return {
       animationDuration: 600,
       grid: { top: 30, right: 18, bottom: 36, left: 40, containLabel: true },
       tooltip: {
@@ -2199,8 +2292,80 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
           itemStyle: { color: '#be123c' }
         }
       ]
+    };
+  }
+
+  // ---- Chart instances + scope wiring (issue 11) ----
+  // Init each chart once with the default (Final) scope. applyScope swaps in
+  // the FT vs Final option, no network / no recompute — precomputed at build.
+  // If a scope has too few bins for a given chart, build returns null and
+  // applyScope hides the chart canvas + reveals the sibling empty-state div.
+  var swBinLabel = function (e) { return 'BIN' + String(e.bin).padStart(4, '0'); };
+  var hwBinLabel = function (e) { return 'HW' + e.bin; };
+  var scopeCharts = [];
+
+  var swPar = OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.sw;
+  var hwPar = OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.hw;
+
+  function registerScopeChart(el, emptyEl, src, minLen, buildOpt) {
+    if (!el || !src) return;
+    var chart = echarts.init(el, null, { renderer: 'canvas' });
+    scopeCharts.push({
+      chart: chart,
+      el: el,
+      emptyEl: emptyEl,
+      build: function (isFinal) {
+        var d = isFinal ? src.final : src.ft;
+        return d && d.length >= minLen ? buildOpt(d) : null;
+      }
     });
-    window.addEventListener('resize', function () { boxChart.resize(); });
+    window.addEventListener('resize', function () { chart.resize(); });
+  }
+
+  registerScopeChart(
+    document.getElementById('ovw-binpareto-sw'),
+    document.getElementById('ovw-binpareto-sw-empty'),
+    swPar, 1, function (d) { return paretoOption(d, swBinLabel); }
+  );
+  registerScopeChart(
+    document.getElementById('ovw-binpareto-hw'),
+    document.getElementById('ovw-binpareto-hw-empty'),
+    hwPar, 1, function (d) { return paretoOption(d, hwBinLabel); }
+  );
+  registerScopeChart(
+    document.getElementById('ovw-binpareto-sw-hist'),
+    document.getElementById('ovw-binpareto-sw-hist-empty'),
+    swPar, 2, histogramOption
+  );
+  registerScopeChart(
+    document.getElementById('ovw-binpareto-sw-box'),
+    document.getElementById('ovw-binpareto-sw-box-empty'),
+    swPar, 5, boxplotOption
+  );
+
+  function applyScope(isFinal) {
+    for (var i = 0; i < scopeCharts.length; i++) {
+      var sc = scopeCharts[i];
+      var opt = sc.build(isFinal);
+      if (opt) {
+        sc.chart.setOption(opt, true);
+        sc.el.hidden = false;
+        if (sc.emptyEl) sc.emptyEl.hidden = true;
+      } else {
+        sc.chart.clear();
+        sc.el.hidden = true;
+        if (sc.emptyEl) sc.emptyEl.hidden = false;
+      }
+    }
+  }
+
+  // Initial paint at the default (Final) scope, then wire the toggle.
+  applyScope(true);
+  var scopeRadios = document.querySelectorAll('input[name="overview-scope"]');
+  for (var r = 0; r < scopeRadios.length; r++) {
+    scopeRadios[r].addEventListener('change', function (ev) {
+      if (ev.target.checked) applyScope(ev.target.value === 'final');
+    });
   }
 }());
 </script>
