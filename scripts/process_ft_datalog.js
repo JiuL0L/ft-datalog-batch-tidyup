@@ -998,8 +998,8 @@ function writeHtml(filePath, ctx) {
   .overview-binpareto { margin-top: 20px; }
   .binpareto-row {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-    gap: 24px;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(0, 3fr);
+    gap: 20px;
     align-items: stretch;
   }
   .binpareto-panel {
@@ -1476,7 +1476,7 @@ function writeHtml(filePath, ctx) {
     .hero-right { grid-template-columns: 1fr 1fr; }
     .rt-row { grid-template-columns: 140px 1fr 1fr 1fr 60px; }
     .rt-start { display: none; }
-    .binpareto-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
+    .binpareto-row { grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(0, 3fr); gap: 16px; }
   }
   @media (max-width: 760px) {
     .page { padding: 20px 16px 60px; }
@@ -1633,6 +1633,12 @@ function writeHtml(filePath, ctx) {
             ${swParetoFt.length >= 2
               ? `<div class="binpareto-chart" id="ovw-binpareto-sw-hist"></div>`
               : `<div class="binpareto-empty">Not enough fail bins to show distribution</div>`}
+          </div>
+          <div class="binpareto-panel">
+            <div class="binpareto-subtitle">Bin count box plot</div>
+            ${swParetoFt.length >= 5
+              ? `<div class="binpareto-chart" id="ovw-binpareto-sw-box"></div>`
+              : `<div class="binpareto-empty">Need ≥5 fail bins for box plot stats</div>`}
           </div>
         </div>
         <div class="binpareto-row-hw">
@@ -2065,6 +2071,136 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
       }]
     });
     window.addEventListener('resize', function () { histChart.resize(); });
+  }
+
+  // ---- SW bin count box plot (issue 09) ----
+  // Five-number summary + Tukey outliers (< Q1-1.5·IQR or > Q3+1.5·IQR).
+  // Quartiles via linear interpolation on the sorted array.
+  function boxplotStats(values) {
+    if (!values || values.length < 5) return null;
+    var sorted = values.slice().sort(function (a, b) { return a - b; });
+    var n = sorted.length;
+    function quantile(q) {
+      var pos = (n - 1) * q;
+      var lo = Math.floor(pos);
+      var hi = Math.ceil(pos);
+      return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
+    }
+    var q1 = quantile(0.25);
+    var median = quantile(0.5);
+    var q3 = quantile(0.75);
+    var iqr = q3 - q1;
+    var lowFence = q1 - 1.5 * iqr;
+    var highFence = q3 + 1.5 * iqr;
+    var whiskerMin = sorted[0], whiskerMax = sorted[n - 1];
+    var outliers = [];
+    for (var i = 0; i < n; i++) {
+      var v = sorted[i];
+      if (v < lowFence || v > highFence) outliers.push(v);
+    }
+    var inLier = sorted.filter(function (v) { return v >= lowFence && v <= highFence; });
+    if (inLier.length) {
+      whiskerMin = inLier[0];
+      whiskerMax = inLier[inLier.length - 1];
+    }
+    return { min: whiskerMin, q1: q1, median: median, q3: q3, max: whiskerMax, outliers: outliers };
+  }
+
+  var boxEl = document.getElementById('ovw-binpareto-sw-box');
+  var boxStats = boxplotStats(swPareto.map(function (e) { return e.count; }));
+  if (boxEl && boxStats) {
+    var boxChart = echarts.init(boxEl, null, { renderer: 'canvas' });
+    var BOX_WIDTH = 44;
+    boxChart.setOption({
+      animationDuration: 600,
+      grid: { top: 30, right: 18, bottom: 36, left: 40, containLabel: true },
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          if (params.seriesType === 'boxplot') {
+            var d = params.data;
+            // d = [name, min, Q1, median, Q3, max]
+            return 'SW bins<br>' +
+              'max: ' + d[5] + '<br>' +
+              'Q3: '  + d[4].toFixed(2) + '<br>' +
+              'median: ' + d[3].toFixed(2) + '<br>' +
+              'Q1: '  + d[2].toFixed(2) + '<br>' +
+              'min: ' + d[1];
+          }
+          if (params.seriesType === 'scatter') {
+            return 'Outlier bin<br>count: ' + params.data[1];
+          }
+          return '';
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: ['SW bins'],
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+      },
+      yAxis: {
+        type: 'value',
+        name: 'count',
+        nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+        minInterval: 1,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: palette.line } },
+        axisLabel: { color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+      },
+      series: [
+        {
+          name: 'box',
+          type: 'boxplot',
+          data: [[boxStats.min, boxStats.q1, boxStats.median, boxStats.q3, boxStats.max]],
+          boxWidth: [BOX_WIDTH, BOX_WIDTH],
+          itemStyle: {
+            color: 'rgba(82, 82, 91, 0.12)',
+            borderColor: '#18181b',
+            borderWidth: 1
+          }
+        },
+        {
+          // Median highlight: overlay a short horizontal line at the median
+          // in --accent green. ECharts boxplot styles the median with the same
+          // borderColor as the box; using a custom-rendered overlay lets us
+          // color just that line.
+          name: 'median',
+          type: 'custom',
+          silent: true,
+          data: [[0, boxStats.median]],
+          renderItem: function (params, api) {
+            var y = api.value(1);
+            var pt = api.coord([0, y]);
+            return {
+              type: 'line',
+              shape: {
+                x1: pt[0] - BOX_WIDTH / 2,
+                y1: pt[1],
+                x2: pt[0] + BOX_WIDTH / 2,
+                y2: pt[1]
+              },
+              style: { stroke: '#059669', lineWidth: 2 }
+            };
+          }
+        },
+        {
+          name: 'outlier',
+          type: 'scatter',
+          data: boxStats.outliers.map(function (v) { return [0, v]; }),
+          symbolSize: 7,
+          itemStyle: { color: '#be123c' }
+        }
+      ]
+    });
+    window.addEventListener('resize', function () { boxChart.resize(); });
   }
 }());
 </script>
