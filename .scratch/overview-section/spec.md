@@ -1,8 +1,9 @@
 # Overview Section — Spec
 
-Status: ready-for-agent
+Status: done
 Owner: human (xiaojie) → agent (implementation)
 Anchor: `/grill-with-docs` session 2026-06-30; decisions logged in [CONTEXT.md](../../CONTEXT.md) and [docs/adr/0001-vendor-and-inline-echarts.md](../../docs/adr/0001-vendor-and-inline-echarts.md).
+Closed: 2026-07-01 via `/verify` against §"Done means"; item 1 net-request violation resolved by removing the Google Fonts `<link>` tags (see [.scratch/offline-fonts/issues/01-vendor-woff2.md](../offline-fonts/issues/01-vendor-woff2.md) for the vendored-Geist follow-up).
 
 ## Goal
 
