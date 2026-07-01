@@ -1109,7 +1109,7 @@ function writeHtml(filePath, ctx) {
   .overview-bysite { margin-top: 20px; }
   .bysite-row {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(0, 3fr);
     gap: 20px;
     align-items: stretch;
   }
@@ -1596,6 +1596,7 @@ function writeHtml(filePath, ctx) {
     .bin-grid { grid-template-columns: 1fr; }
     .notes { grid-template-columns: 1fr; gap: 20px; padding: 22px 24px; }
     .binpareto-row { grid-template-columns: 1fr; gap: 18px; }
+    .bysite-row { grid-template-columns: 1fr; gap: 18px; }
   }
 </style>
 </head>
@@ -1774,6 +1775,18 @@ function writeHtml(filePath, ctx) {
             ${agg.sites.length
               ? `<div class="bysite-chart" id="ovw-bysite-yield"></div>`
               : `<div class="bysite-empty">No Site data in this lot.</div>`}
+          </div>
+          <div class="bysite-panel">
+            <div class="bysite-subtitle">Site yield distribution</div>
+            ${agg.sites.length >= 2
+              ? `<div class="bysite-chart" id="ovw-bysite-hist"></div>`
+              : `<div class="bysite-empty">Need ≥2 Sites to show distribution</div>`}
+          </div>
+          <div class="bysite-panel">
+            <div class="bysite-subtitle">Site yield box plot</div>
+            ${agg.sites.length >= 4
+              ? `<div class="bysite-chart" id="ovw-bysite-box"></div>`
+              : `<div class="bysite-empty">Need ≥4 Sites for box plot stats</div>`}
           </div>
         </div>
       </div>
@@ -2182,9 +2195,11 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
 
   // ---- Bin count box plot (issue 09) ----
   // Five-number summary + Tukey outliers (< Q1-1.5·IQR or > Q3+1.5·IQR).
-  // Quartiles via linear interpolation on the sorted array.
+  // Quartiles via linear interpolation on the sorted array. Min n=4 makes the
+  // quartile interpolation well-defined; SW bin callers apply their own ≥5
+  // threshold upstream, site-yield callers use ≥4.
   function boxplotStats(values) {
-    if (!values || values.length < 5) return null;
+    if (!values || values.length < 4) return null;
     var sorted = values.slice().sort(function (a, b) { return a - b; });
     var n = sorted.length;
     function quantile(q) {
@@ -2403,6 +2418,218 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
       ]
     });
     window.addEventListener('resize', function () { bySiteChart.resize(); });
+  }
+
+  // ---- Site yield histogram (issue 14) ----
+  // Bucket the per-Site yield% values so the reader can see the distribution
+  // shape across the tester's sockets. Site counts are typically 4/8/16, so
+  // use a coarse rule: bucketCount = max(3, min(8, ceil(N / 2))). Bucket edges
+  // are float-aligned (2-decimal labels) rather than integer as in the SW-bin
+  // histogram, since yields cluster in narrow ranges (e.g. 92%–98%).
+  function siteYieldBuckets(values) {
+    if (!values || values.length < 2) return null;
+    var lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] < lo) lo = values[i];
+      if (values[i] > hi) hi = values[i];
+    }
+    var fmt = function (v) { return v.toFixed(2); };
+    if (hi - lo < 0.005) {
+      return [{ lo: lo, hi: hi, label: fmt(lo), count: values.length }];
+    }
+    var bucketCount = Math.max(3, Math.min(8, Math.ceil(values.length / 2)));
+    var step = (hi - lo) / bucketCount;
+    var buckets = [];
+    for (var b = 0; b < bucketCount; b++) {
+      var lb = lo + b * step;
+      var ub = b === bucketCount - 1 ? hi : lb + step;
+      buckets.push({ lo: lb, hi: ub, count: 0, label: fmt(lb) + '–' + fmt(ub) });
+    }
+    for (var j = 0; j < values.length; j++) {
+      var v = values[j];
+      var idx = Math.floor((v - lo) / step);
+      if (idx >= bucketCount) idx = bucketCount - 1;
+      if (idx < 0) idx = 0;
+      buckets[idx].count += 1;
+    }
+    return buckets;
+  }
+
+  function siteYieldHistogramOption(values) {
+    var buckets = siteYieldBuckets(values);
+    if (!buckets) return null;
+    return {
+      color: [palette.mute2],
+      animationDuration: 600,
+      grid: { top: 30, right: 18, bottom: 36, left: 40, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          var p = params[0];
+          var b = buckets[p.dataIndex];
+          var rangeLabel = b.lo === b.hi
+            ? ('yield = ' + b.lo.toFixed(2) + '%')
+            : ('yield ' + b.lo.toFixed(2) + '–' + b.hi.toFixed(2) + '%');
+          return rangeLabel + '<br>' + p.data + ' Site' + (p.data === 1 ? '' : 's');
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: buckets.map(function (b) { return b.label; }),
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11,
+          rotate: buckets.length > 4 ? 30 : 0
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Sites',
+        nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+        minInterval: 1,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: palette.line } },
+        axisLabel: { color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+      },
+      series: [{
+        type: 'bar',
+        data: buckets.map(function (b) { return b.count; }),
+        barMaxWidth: 40,
+        itemStyle: { borderRadius: [3, 3, 0, 0] }
+      }]
+    };
+  }
+
+  var bySiteHistEl = document.getElementById('ovw-bysite-hist');
+  if (bySiteHistEl && bySite.length >= 2) {
+    var bySiteHistChart = echarts.init(bySiteHistEl, null, { renderer: 'canvas' });
+    var siteFtPct = bySite.map(function (s) { return s.ftYield * 100; });
+    var histOpt = siteYieldHistogramOption(siteFtPct);
+    if (histOpt) bySiteHistChart.setOption(histOpt);
+    window.addEventListener('resize', function () { bySiteHistChart.resize(); });
+  }
+
+  // ---- Site yield box plot (issue 15) ----
+  // Same FT yield% array as the histogram, plotted as a single Tukey box so
+  // the reader sees spread + outlier Sites at a glance. Y-axis is padded
+  // around the data (not forced 0–100) since yields cluster in narrow ranges.
+  function siteYieldBoxplotOption(values) {
+    var stats = boxplotStats(values);
+    if (!stats) return null;
+    var BOX_WIDTH = 44;
+    var lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] < lo) lo = values[i];
+      if (values[i] > hi) hi = values[i];
+    }
+    var span = Math.max(hi - lo, 0.5);
+    var pad = Math.max(span * 0.4, 0.5);
+    var yMin = Math.max(0, Math.floor((lo - pad) * 10) / 10);
+    var yMax = Math.min(100, Math.ceil((hi + pad) * 10) / 10);
+    return {
+      animationDuration: 600,
+      grid: { top: 30, right: 18, bottom: 36, left: 40, containLabel: true },
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          if (params.seriesType === 'boxplot') {
+            var d = params.data;
+            // d = [name, min, Q1, median, Q3, max]
+            return 'Sites<br>' +
+              'max: '    + d[5].toFixed(2) + '%<br>' +
+              'Q3: '     + d[4].toFixed(2) + '%<br>' +
+              'median: ' + d[3].toFixed(2) + '%<br>' +
+              'Q1: '     + d[2].toFixed(2) + '%<br>' +
+              'min: '    + d[1].toFixed(2) + '%';
+          }
+          if (params.seriesType === 'scatter') {
+            return 'Outlier Site<br>yield: ' + params.data[1].toFixed(2) + '%';
+          }
+          return '';
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: ['Sites'],
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+      },
+      yAxis: {
+        type: 'value',
+        name: 'yield%',
+        nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+        min: yMin,
+        max: yMax,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: palette.line } },
+        axisLabel: { color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11 }
+      },
+      series: [
+        {
+          name: 'box',
+          type: 'boxplot',
+          data: [[stats.min, stats.q1, stats.median, stats.q3, stats.max]],
+          boxWidth: [BOX_WIDTH, BOX_WIDTH],
+          itemStyle: {
+            color: 'rgba(5, 150, 105, 0.12)',
+            borderColor: '#18181b',
+            borderWidth: 1
+          }
+        },
+        {
+          // Overlay the median with --accent-2 (slightly darker green).
+          // ECharts boxplot draws the median with the box's borderColor;
+          // this custom line lets us tint just that stroke.
+          name: 'median',
+          type: 'custom',
+          silent: true,
+          data: [[0, stats.median]],
+          renderItem: function (params, api) {
+            var y = api.value(1);
+            var pt = api.coord([0, y]);
+            return {
+              type: 'line',
+              shape: {
+                x1: pt[0] - BOX_WIDTH / 2,
+                y1: pt[1],
+                x2: pt[0] + BOX_WIDTH / 2,
+                y2: pt[1]
+              },
+              style: { stroke: '#047857', lineWidth: 2 }
+            };
+          }
+        },
+        {
+          name: 'outlier',
+          type: 'scatter',
+          data: stats.outliers.map(function (v) { return [0, v]; }),
+          symbolSize: 7,
+          itemStyle: { color: '#be123c' }
+        }
+      ]
+    };
+  }
+
+  var bySiteBoxEl = document.getElementById('ovw-bysite-box');
+  if (bySiteBoxEl && bySite.length >= 4) {
+    var bySiteBoxChart = echarts.init(bySiteBoxEl, null, { renderer: 'canvas' });
+    var siteFtPctBox = bySite.map(function (s) { return s.ftYield * 100; });
+    var boxOpt = siteYieldBoxplotOption(siteFtPctBox);
+    if (boxOpt) bySiteBoxChart.setOption(boxOpt);
+    window.addEventListener('resize', function () { bySiteBoxChart.resize(); });
   }
 
   // ---- Chart instances + scope wiring (issue 11) ----
