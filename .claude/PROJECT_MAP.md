@@ -53,7 +53,7 @@ Critical schema quirks:
 6. `matchRetestToRT0Fails` — greedy 1-to-1 assignment minimizing scale-normalized L2 distance over fingerprint columns (RT0 fail rows ↔ retest rows).
 7. `buildChipTimeline` — for each RT0 row, attach matched retest entries; apply **any-pass-wins** to pick the final state.
 8. `aggregate` + `aggregateOverviewBins` — overall yield, by first-test Site yield, bin breakdown (first-test vs final), `cumulativeByRT[]` (any-pass-wins earliest-RT pass curve), and fail-bin Pareto data (`[{bin, count, cumPct}]` desc) for SW/HW × FT/Final scopes.
-9. `writeMergedCsv` + `writeHtml` — outputs. `writeHtml` reads `scripts/vendor/echarts.min.js` synchronously and inlines it as a single `<script>` block before `</body>` so reports stay offline-capable. Overview section renders the RT cumulative-yield line, SW Bin Pareto (bar + cum-% line, 80% markLine), and a SW bin count histogram beside it.
+9. `writeMergedCsv` + `writeHtml` — outputs. `writeHtml` reads `scripts/vendor/echarts.min.js` synchronously and inlines it as a single `<script>` block before `</body>` so reports stay offline-capable. Overview section renders the RT cumulative-yield line, SW Bin Pareto (bar + cum-% line, 80% markLine) with SW bin count histogram, and the HW Bin Pareto on a second full-width row below.
 
 ## Key calls / call sites
 

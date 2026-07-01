@@ -411,6 +411,7 @@ const pct = (n, d) => (d ? (100 * n / d).toFixed(2) + '%' : '0.00%');
 function writeHtml(filePath, ctx) {
   const { input, rt0, retests, chipList, agg, overviewBinPareto } = ctx;
   const swParetoFt = (overviewBinPareto && overviewBinPareto.sw && overviewBinPareto.sw.ft) || [];
+  const hwParetoFt = (overviewBinPareto && overviewBinPareto.hw && overviewBinPareto.hw.ft) || [];
   const lotMeta = rt0.ifm.TesterInfo || {};
   const yieldDelta = (agg.trueYield - agg.ftYield) * 100;
   const rescueRoundsToZero = yieldDelta < 0.005;
@@ -1019,6 +1020,9 @@ function writeHtml(filePath, ctx) {
     width: 100%;
     height: 280px;
   }
+  .binpareto-chart-hw {
+    height: 240px;
+  }
   .binpareto-empty {
     width: 100%;
     height: 280px;
@@ -1031,6 +1035,12 @@ function writeHtml(filePath, ctx) {
     text-align: center;
     padding: 0 12px;
     line-height: 1.55;
+  }
+  .binpareto-empty-hw { height: 240px; }
+  .binpareto-row-hw {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line-soft);
   }
 
   /* ---------- Sites ---------- */
@@ -1625,6 +1635,14 @@ function writeHtml(filePath, ctx) {
               : `<div class="binpareto-empty">Not enough fail bins to show distribution</div>`}
           </div>
         </div>
+        <div class="binpareto-row-hw">
+          <div class="binpareto-panel">
+            <div class="binpareto-subtitle">HW Bin Pareto</div>
+            ${hwParetoFt.length
+              ? `<div class="binpareto-chart binpareto-chart-hw" id="ovw-binpareto-hw"></div>`
+              : `<div class="binpareto-empty binpareto-empty-hw">No fail HW bins — perfect FT yield.</div>`}
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1846,17 +1864,18 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
     window.addEventListener('resize', function () { chart.resize(); });
   }
 
-  // ---- SW Bin Pareto (issue 07) ----
-  var swPareto = (OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.sw && OVERVIEW_BIN_PARETO.sw.ft) || [];
-  var parEl = document.getElementById('ovw-binpareto-sw');
-  if (parEl && swPareto.length) {
-    var paretoChart = echarts.init(parEl, null, { renderer: 'canvas' });
-    var binLabels = swPareto.map(function (e) { return 'BIN' + String(e.bin).padStart(4, '0'); });
-    var counts = swPareto.map(function (e) { return e.count; });
-    var cumPctVals = swPareto.map(function (e) { return Number(e.cumPct.toFixed(2)); });
+  // Shared Pareto renderer (issue 07 SW, issue 10 HW). Bar + line dual-axis:
+  // bars = count (--fail red), line = cumulative % (--ink-2 near-black),
+  // with a dashed 80% markLine on the right axis. binLabelFn(entry) formats
+  // the X-axis label (e.g. 'BIN0007' for SW, 'HW1' for HW).
+  function renderParetoChart(el, data, binLabelFn) {
+    var chart = echarts.init(el, null, { renderer: 'canvas' });
+    var binLabels = data.map(binLabelFn);
+    var counts = data.map(function (e) { return e.count; });
+    var cumPctVals = data.map(function (e) { return Number(e.cumPct.toFixed(2)); });
     var totalFails = counts.reduce(function (s, x) { return s + x; }, 0) || 1;
 
-    paretoChart.setOption({
+    chart.setOption({
       color: ['#be123c', '#18181b'],
       animationDuration: 600,
       grid: { top: 30, right: 56, bottom: 36, left: 40, containLabel: true },
@@ -1949,7 +1968,23 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
         }
       ]
     });
-    window.addEventListener('resize', function () { paretoChart.resize(); });
+    window.addEventListener('resize', function () { chart.resize(); });
+  }
+
+  // ---- SW Bin Pareto (issue 07) ----
+  var swPareto = (OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.sw && OVERVIEW_BIN_PARETO.sw.ft) || [];
+  var swParEl = document.getElementById('ovw-binpareto-sw');
+  if (swParEl && swPareto.length) {
+    renderParetoChart(swParEl, swPareto, function (e) {
+      return 'BIN' + String(e.bin).padStart(4, '0');
+    });
+  }
+
+  // ---- HW Bin Pareto (issue 10) ----
+  var hwPareto = (OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.hw && OVERVIEW_BIN_PARETO.hw.ft) || [];
+  var hwParEl = document.getElementById('ovw-binpareto-hw');
+  if (hwParEl && hwPareto.length) {
+    renderParetoChart(hwParEl, hwPareto, function (e) { return 'HW' + e.bin; });
   }
 
   // ---- SW bin count histogram (issue 08) ----
