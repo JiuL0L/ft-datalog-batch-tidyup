@@ -2506,15 +2506,6 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
     };
   }
 
-  var bySiteHistEl = document.getElementById('ovw-bysite-hist');
-  if (bySiteHistEl && bySite.length >= 2) {
-    var bySiteHistChart = echarts.init(bySiteHistEl, null, { renderer: 'canvas' });
-    var siteFtPct = bySite.map(function (s) { return s.ftYield * 100; });
-    var histOpt = siteYieldHistogramOption(siteFtPct);
-    if (histOpt) bySiteHistChart.setOption(histOpt);
-    window.addEventListener('resize', function () { bySiteHistChart.resize(); });
-  }
-
   // ---- Site yield box plot (issue 15) ----
   // Same FT yield% array as the histogram, plotted as a single Tukey box so
   // the reader sees spread + outlier Sites at a glance. Y-axis is padded
@@ -2623,26 +2614,24 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
     };
   }
 
-  var bySiteBoxEl = document.getElementById('ovw-bysite-box');
-  if (bySiteBoxEl && bySite.length >= 4) {
-    var bySiteBoxChart = echarts.init(bySiteBoxEl, null, { renderer: 'canvas' });
-    var siteFtPctBox = bySite.map(function (s) { return s.ftYield * 100; });
-    var boxOpt = siteYieldBoxplotOption(siteFtPctBox);
-    if (boxOpt) bySiteBoxChart.setOption(boxOpt);
-    window.addEventListener('resize', function () { bySiteBoxChart.resize(); });
-  }
-
-  // ---- Chart instances + scope wiring (issue 11) ----
+  // ---- Chart instances + scope wiring (issue 11 + issue 16) ----
   // Init each chart once with the default (Final) scope. applyScope swaps in
   // the FT vs Final option, no network / no recompute — precomputed at build.
-  // If a scope has too few bins for a given chart, build returns null and
-  // applyScope hides the chart canvas + reveals the sibling empty-state div.
+  // If a scope has too few bins/Sites for a given chart, build returns null
+  // and applyScope hides the chart canvas + reveals the sibling empty-state
+  // div. Bin Pareto charts (4) draw from OVERVIEW_BIN_PARETO; Yield-by-Site
+  // histogram + box plot (2) draw from bySiteYields — a matching {ft, final}
+  // shape derived from bySite so the same registration path works.
   var swBinLabel = function (e) { return 'BIN' + String(e.bin).padStart(4, '0'); };
   var hwBinLabel = function (e) { return 'HW' + e.bin; };
   var scopeCharts = [];
 
   var swPar = OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.sw;
   var hwPar = OVERVIEW_BIN_PARETO && OVERVIEW_BIN_PARETO.hw;
+  var bySiteYields = bySite.length ? {
+    ft: bySite.map(function (s) { return s.ftYield * 100; }),
+    final: bySite.map(function (s) { return s.finalYield * 100; })
+  } : null;
 
   function registerScopeChart(el, emptyEl, src, minLen, buildOpt) {
     if (!el || !src) return;
@@ -2678,6 +2667,16 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
     document.getElementById('ovw-binpareto-sw-box'),
     document.getElementById('ovw-binpareto-sw-box-empty'),
     swPar, 5, boxplotOption
+  );
+  registerScopeChart(
+    document.getElementById('ovw-bysite-hist'),
+    null,
+    bySiteYields, 2, siteYieldHistogramOption
+  );
+  registerScopeChart(
+    document.getElementById('ovw-bysite-box'),
+    null,
+    bySiteYields, 4, siteYieldBoxplotOption
   );
 
   function applyScope(isFinal) {

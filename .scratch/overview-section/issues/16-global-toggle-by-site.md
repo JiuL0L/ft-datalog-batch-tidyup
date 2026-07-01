@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -17,11 +17,11 @@ Behavior to add:
 
 ## Acceptance criteria
 
-- [ ] Toggling FT/Final updates Bin Pareto charts (4) AND Yield by Site histogram + box plot (2) in a single user action
-- [ ] All charts that change on toggle use the precomputed arrays — no recompute, no network
-- [ ] The per-Site main chart's FT and True bars remain visible across both toggle states (either unchanged, or with the inactive series dimmed)
-- [ ] On any toggle change, the histogram and box plot empty-state thresholds still apply correctly to whichever scope is active
-- [ ] Final manual check: from a fresh page load, toggling back and forth several times keeps all 6 reactive charts in sync with the toggle's current state
+- [x] Toggling FT/Final updates Bin Pareto charts (4) AND Yield by Site histogram + box plot (2) in a single user action
+- [x] All charts that change on toggle use the precomputed arrays — no recompute, no network
+- [x] The per-Site main chart's FT and True bars remain visible across both toggle states (either unchanged, or with the inactive series dimmed)
+- [x] On any toggle change, the histogram and box plot empty-state thresholds still apply correctly to whichever scope is active
+- [x] Final manual check: from a fresh page load, toggling back and forth several times keeps all 6 reactive charts in sync with the toggle's current state
 
 ## Blocked by
 
