@@ -1764,6 +1764,19 @@ function writeHtml(filePath, ctx) {
           </div>
         </div>
       </div>
+      <div class="overview-region overview-bysite">
+        <div class="overview-region-head">
+          <div class="overview-region-eyebrow">Yield by Site</div>
+        </div>
+        <div class="bysite-row">
+          <div class="bysite-panel">
+            <div class="bysite-subtitle">Per-Site yield</div>
+            ${agg.sites.length
+              ? `<div class="bysite-chart" id="ovw-bysite-yield"></div>`
+              : `<div class="bysite-empty">No Site data in this lot.</div>`}
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="section">
@@ -2293,6 +2306,103 @@ const OVERVIEW_BY_SITE = ${JSON.stringify({ bySite: agg.sites })};
         }
       ]
     };
+  }
+
+  // ---- Per-Site yield grouped bar (issue 13) ----
+  // Two bars per Site: FT yield (mute gray) and True yield (accent green).
+  // Independent of the FT/Final scope toggle — always shows both.
+  var bySite = (OVERVIEW_BY_SITE && OVERVIEW_BY_SITE.bySite) || [];
+  var bySiteEl = document.getElementById('ovw-bysite-yield');
+  if (bySiteEl && bySite.length) {
+    var bySiteChart = echarts.init(bySiteEl, null, { renderer: 'canvas' });
+    var siteLabels = bySite.map(function (s) { return 'Site ' + s.site; });
+    var ftPctVals = bySite.map(function (s) { return Number((s.ftYield * 100).toFixed(2)); });
+    var truePctVals = bySite.map(function (s) { return Number((s.finalYield * 100).toFixed(2)); });
+
+    bySiteChart.setOption({
+      animationDuration: 600,
+      grid: { top: 40, right: 18, bottom: 36, left: 40, containLabel: true },
+      legend: {
+        top: 4,
+        right: 8,
+        icon: 'roundRect',
+        itemWidth: 10,
+        itemHeight: 10,
+        itemGap: 16,
+        textStyle: {
+          color: palette.mute,
+          fontFamily: 'Geist Mono, monospace',
+          fontSize: 11
+        },
+        data: ['FT yield', 'True yield']
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderWidth: 1,
+        textStyle: { color: '#18181b', fontFamily: 'Geist Mono, monospace', fontSize: 11 },
+        formatter: function (params) {
+          if (!params || !params.length) return '';
+          var idx = params[0].dataIndex;
+          var s = bySite[idx];
+          // Use the already-rounded values so the displayed Δ equals True − FT
+          // of the two rows a reader can see (avoids a 0.01pp mismatch when
+          // ftYield / finalYield round to different second-decimal digits
+          // than their raw difference does — e.g. 10/13 vs 12/13).
+          var ftPct = ftPctVals[idx];
+          var truePct = truePctVals[idx];
+          var delta = truePct - ftPct;
+          var sign = delta >= 0 ? '+' : '';
+          return 'Site ' + s.site + '<br>' +
+            'FT: ' + s.ftPass + '/' + s.total + ' · ' + ftPct.toFixed(2) + '%<br>' +
+            'True: ' + s.finalPass + '/' + s.total + ' · ' + truePct.toFixed(2) + '%<br>' +
+            'Δ ' + sign + delta.toFixed(2) + 'pp';
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: siteLabels,
+        axisLine: { lineStyle: { color: palette.line } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 11,
+          rotate: siteLabels.length > 6 ? 30 : 0
+        }
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        max: 100,
+        name: 'Yield',
+        nameTextStyle: { color: palette.mute, fontFamily: 'Geist Mono, monospace', fontSize: 10 },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: palette.line } },
+        axisLabel: {
+          color: palette.mute2, fontFamily: 'Geist Mono, monospace', fontSize: 11,
+          formatter: function (v) { return v + '%'; }
+        }
+      },
+      series: [
+        {
+          name: 'FT yield',
+          type: 'bar',
+          data: ftPctVals,
+          barMaxWidth: 28,
+          itemStyle: { color: palette.mute, borderRadius: [3, 3, 0, 0] }
+        },
+        {
+          name: 'True yield',
+          type: 'bar',
+          data: truePctVals,
+          barMaxWidth: 28,
+          itemStyle: { color: palette.accent, borderRadius: [3, 3, 0, 0] }
+        }
+      ]
+    });
+    window.addEventListener('resize', function () { bySiteChart.resize(); });
   }
 
   // ---- Chart instances + scope wiring (issue 11) ----
