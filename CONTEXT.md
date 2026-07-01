@@ -33,6 +33,7 @@ Implementation details belong in code; decisions belong in `docs/adr/`.
 
 - **Chart library** — Apache ECharts (full build, ~250 KB gzip) is vendored at `scripts/vendor/echarts.min.js` and **inlined** into every generated `report.html`. The script reads the file at generation time and embeds its source inside a `<script>` tag, so reports remain fully offline-capable. Rationale: see [[adr-0001]].
 - **Color contract** — ECharts default palette is overridden to match the existing report semantics: `--accent` green = pass / yield gain; `--warn` orange = rescued / intermediate; `--fail` red = fail / loss; `--mute` grays = neutral / counts / grid. The contract holds across FT/Final toggle (data changes, color meaning doesn't).
+    - **Exception** — the Overview *Yield region* "Rescue" KPI number is styled `--accent-2` (dark green), not `--warn`. Rationale: this KPI reads as a **positive delta** (`+4.00pp` FT→True), coherent with the True-yield number sitting next to it. `--warn` is still reserved for rescued-item indicators elsewhere (retest-row pip, chip-table rescued row, `src-retest` tag).
 - **Bin scopes** — SW bin = direct `Bin#` column from CSV; HW bin = SW bin mapped through `HW:SW_BIN_MAPPING_LIST`. Both are used in Bin Pareto; the rest of the report uses SW bin (unchanged).
 
 ## Non-terms (avoid)
